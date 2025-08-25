@@ -107,7 +107,7 @@ export class GameManager extends Component {
 
     // 关卡界面按钮回调函数
     public onLevelToLevelClearClick(): void {
-        this.uiManager?.showLevelClearOnly();
+        this.onLevelClear();
     }
 
     // 关卡界面打开设置界面，不关闭关卡界面
@@ -123,9 +123,10 @@ export class GameManager extends Component {
         if (nextLevel <= this.mapManager?.getTotalLevels()) {
             this.setCurrentLevel(nextLevel);
         } else {
-            // 没有下一关时，设置为超出范围的关卡以显示"无限关卡"
-            this.currentLevel = nextLevel;
-            this.uiManager?.updateLevelLabel(nextLevel, this.mapManager?.getTotalLevels() || 0);
+            // this.currentLevel = nextLevel;
+            // this.uiManager?.updateLevelLabel(nextLevel, this.mapManager?.getTotalLevels() || 0);
+            // 没有下一关时，展示全通关界面
+            this.uiManager?.showLevelAllClearOnly();
         }
         this.uiManager?.showLevelOnly();
     }
@@ -160,8 +161,13 @@ export class GameManager extends Component {
 
     // 关卡完成时调用
     public onLevelClear(): void {
-        // 将关卡完成时事件绑定到UIManager的对应方法
-        this.uiManager?.showLevelClearOnly();
+        const nextLevel = this.currentLevel + 1;
+        if (nextLevel <= this.mapManager?.getTotalLevels()) {
+            this.uiManager?.showLevelClearOnly();
+        } else {
+            // 没有下一关时，展示全通关界面
+            this.uiManager?.showLevelAllClearOnly();
+        }
     }
 
     update(deltaTime: number) {

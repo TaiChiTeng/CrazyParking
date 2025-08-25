@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween } from 'cc';
 import { MapData } from './MapData';
 import { UIManager } from './UIManager';
+import { GameManager } from './GameManager';
 const { ccclass, property } = _decorator;
 
 // 汽车位置策略接口
@@ -149,6 +150,9 @@ export class CarManager extends Component {
 
     @property(UIManager)
     public uiManager: UIManager = null; // UI管理器引用
+
+    @property(GameManager)
+    public gameManager: GameManager = null; // Game管理器引用
 
     private successfulParks: number = 0;
     private currentLevel: number = 1;
@@ -1648,10 +1652,10 @@ export class CarManager extends Component {
         
         if (this.successfulParks === totalCars && totalCars > 0) {
             console.log('===== 通关条件达成！所有汽车都已成功停车 =====');
-            if (this.uiManager) {
-                this.uiManager.showLevelClearOnly();
+            if (this.gameManager) {
+                this.gameManager.onLevelClear();
             } else {
-                console.error('UIManager引用未设置，无法显示通关界面');
+                console.error('gameManager引用未设置，无法显示通关界面');
             }
         }
     }

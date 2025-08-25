@@ -14,6 +14,9 @@ export class UIManager extends Component {
     public UILevelClear: Node = null;
 
     @property(Node)
+    public UILevelAllClear: Node = null;
+
+    @property(Node)
     public UISetting: Node = null;
 
     @property(Node)
@@ -27,6 +30,9 @@ export class UIManager extends Component {
 
     @property(Animation)
     public animLevelClear: Animation = null;
+
+    @property(Animation)
+    public animLevelAllClear: Animation = null;
 
     @property(Animation)
     public animSetting: Animation = null;
@@ -50,6 +56,7 @@ export class UIManager extends Component {
         this.UILevelClear.active = false;
         this.UISetting.active = false;
         this.UIConfirm.active = false;
+        this.UILevelAllClear.active = false;
         // 播放主菜单动画
         if (this.animMainMenu) {
             this.animMainMenu.play('AnimShowMainMenu');
@@ -82,6 +89,22 @@ export class UIManager extends Component {
         // 播放关卡界面动画
         if (this.animLevelClear) {
             this.animLevelClear.play('AnimShowLevelClear');
+        }
+    }
+
+    // 显示全通关界面，隐藏其他界面
+    public showLevelAllClearOnly(): void {
+        console.log('===== 调用showLevelAllClearOnly方法 =====');
+        
+        // 先隐藏其他界面，避免界面闪烁
+        this.UIMainMenu.active = false;
+        this.UISetting.active = false;
+        this.UIConfirm.active = false;
+        this.UILevelClear.active = false;
+        this.UILevelAllClear.active = true;
+        // 播放全通关界面动画
+        if (this.animLevelAllClear) {
+            this.animLevelAllClear.play('AnimShowLevelAllClear');
         }
     }
 

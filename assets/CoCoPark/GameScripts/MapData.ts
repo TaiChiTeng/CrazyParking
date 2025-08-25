@@ -10,12 +10,12 @@ import { Level7Map } from './Map/lv7';
 import { Level8Map } from './Map/lv8';
 import { Level9Map } from './Map/lv9';
 import { Level10Map } from './Map/lv10';
-import { Level11Map } from './Map/lv11';
-import { Level12Map } from './Map/lv12';
-import { Level13Map } from './Map/lv13';
-import { Level14Map } from './Map/lv14';
-import { Level15Map } from './Map/lv15';
-import { Level16Map } from './Map/lv16';
+// import { Level11Map } from './Map/lv11';
+// import { Level12Map } from './Map/lv12';
+// import { Level13Map } from './Map/lv13';
+// import { Level14Map } from './Map/lv14';
+// import { Level15Map } from './Map/lv15';
+// import { Level16Map } from './Map/lv16';
 
 const { ccclass } = _decorator;
 
@@ -32,13 +32,13 @@ export class MapData {
         7: Level7Map,
         8: Level8Map,
         9: Level9Map,
-        10: Level10Map,
-        11: Level11Map,
-        12: Level12Map,
-        13: Level13Map,
-        14: Level14Map,
-        15: Level15Map,
-        16: Level16Map
+        10: Level10Map
+        // 11: Level11Map,
+        // 12: Level12Map,
+        // 13: Level13Map,
+        // 14: Level14Map,
+        // 15: Level15Map,
+        // 16: Level16Map
     };
 
     // 根据关卡数获取地图数据
