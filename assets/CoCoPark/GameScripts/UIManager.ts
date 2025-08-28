@@ -96,11 +96,10 @@ export class UIManager extends Component {
     public showLevelAllClearOnly(): void {
         console.log('===== 调用showLevelAllClearOnly方法 =====');
         
-        // 先隐藏其他界面，避免界面闪烁
-        this.UIMainMenu.active = false;
-        this.UISetting.active = false;
-        this.UIConfirm.active = false;
-        this.UILevelClear.active = false;
+        // this.UIMainMenu.active = false;
+        // this.UISetting.active = false;
+        // this.UIConfirm.active = false;
+        // this.UILevelClear.active = false;
         this.UILevelAllClear.active = true;
         // 播放全通关界面动画
         if (this.animLevelAllClear) {

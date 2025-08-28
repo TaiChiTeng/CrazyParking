@@ -1604,10 +1604,10 @@ export class CarManager extends Component {
      */
     private playCarMoveAnimation(carNode: Node, targetOffset: Vec3): void {
         this.isAnimationPlaying = true;
-        this.moveCarAnimation(carNode, targetOffset, this.carAnimDuration, () => {
+        this.moveCarAnimation(carNode, targetOffset, this.carAnimDuration, async () => {
             this.isAnimationPlaying = false;
             // 动画播放完毕后更新停车计数
-            this.updateParkingCount();
+            await this.updateParkingCount();
         });
     }
 
@@ -1631,7 +1631,7 @@ export class CarManager extends Component {
     /**
      * 更新停车计数
      */
-    private updateParkingCount(): void {
+    private async updateParkingCount(): Promise<void> {
         // 统计所有inPark==1的汽车数量
         this.successfulParks = this.carParkingInfos.filter(info => info.inPark === 1).length;
         console.log(`updateParkingCount被调用，当前成功停车数: ${this.successfulParks}`);
@@ -1640,20 +1640,20 @@ export class CarManager extends Component {
         this.updateParkingUI();
         
         // 检查是否通关
-        this.checkLevelComplete();
+        await this.checkLevelComplete();
     }
 
     /**
      * 检查是否通关
      */
-    private checkLevelComplete(): void {
+    private async checkLevelComplete(): Promise<void> {
         const totalCars = this.carParkingInfos.length;
         console.log(`当前成功停车数: ${this.successfulParks}, 本关汽车总数: ${totalCars}`);
         
         if (this.successfulParks === totalCars && totalCars > 0) {
             console.log('===== 通关条件达成！所有汽车都已成功停车 =====');
             if (this.gameManager) {
-                this.gameManager.onLevelClear();
+                await this.gameManager.onLevelClear();
             } else {
                 console.error('gameManager引用未设置，无法显示通关界面');
             }
@@ -1663,11 +1663,11 @@ export class CarManager extends Component {
     /**
      * 增加成功停车计数（保留原方法供外部调用）
      */
-    public incrementSuccessfulPark(): void {
+    public async incrementSuccessfulPark(): Promise<void> {
         this.successfulParks++;
         console.log(`成功停车计数增加到: ${this.successfulParks}`);
         // 检查是否通关
-        this.checkLevelComplete();
+        await this.checkLevelComplete();
     }
 
     /**

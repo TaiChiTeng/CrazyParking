@@ -3,6 +3,7 @@ import { UIManager } from './UIManager';
 import { CarManager } from './CarManager';
 import { MapManager } from './MapManager';
 import { CarAudio } from './CarAudio';
+import { SaveManager } from './SaveManager';
 
 const { ccclass, property } = _decorator;
 
@@ -24,11 +25,16 @@ export class GameManager extends Component {
     private uiManager: UIManager = null;
     private carManager: CarManager = null;
     private mapManager: MapManager = null;
+    private saveManager: SaveManager = null;
     private currentLevel: number = 1; // 当前关卡
+    private isLoadingSave: boolean = false; // 是否正在加载存档
 
-    start() {
+    async start() {
         // 获取各管理器引用
         this.initManagers();
+
+        // 初始化存档管理器
+        this.initSaveManager();
 
         // 初始化时只显示主菜单
         this.uiManager?.showMainMenuOnly();
@@ -72,31 +78,62 @@ export class GameManager extends Component {
         }
     }
 
+    // 初始化存档管理器
+    private initSaveManager() {
+        this.saveManager = SaveManager.getInstance();
+        if (!this.saveManager) {
+            console.error('SaveManager初始化失败');
+        } else {
+            console.log('SaveManager初始化成功');
+        }
+    }
+
     // 设置当前关卡
     public setCurrentLevel(level: number): void {
-        if (level >= 1 && level <= this.mapManager?.getTotalLevels()) {
-            this.currentLevel = level;
-            console.log(`Current level set to: ${level}`);
+        // 使用SaveManager验证关卡（支持10关循环）
+        const validLevel = this.saveManager?.validateLevel ? 
+            this.saveManager.validateLevel(level) : 
+            Math.max(1, Math.min(level, 10));
+            
+        this.currentLevel = validLevel;
+        console.log(`Current level set to: ${validLevel}`);
 
-            // 更新关卡文本
-            this.uiManager?.updateLevelLabel(level, this.mapManager?.getTotalLevels() || 0);
+        // 更新关卡文本（显示为10关系统）
+        const maxLevel = this.saveManager?.getMaxLevel() || 10;
+        this.uiManager?.updateLevelLabel(validLevel, maxLevel);
 
-            // 当关卡改变时，重新创建地图
-            this.mapManager?.setCurrentLevel(level);
+        // 当关卡改变时，重新创建地图
+        this.mapManager?.setCurrentLevel(validLevel);
 
-            // 初始化汽车
-            this.carManager?.initCars(level);
-        } else {
-            console.error(`Invalid level: ${level}. Level must be between 1 and ${this.mapManager?.getTotalLevels()}`);
-        }    }
+        // 初始化汽车
+        this.carManager?.initCars(validLevel);
+    }
 
 
 
     // 主菜单按钮回调函数
-    public onMainMenuToLevelClick(): void {
-        // 默认进入第一关
-        this.setCurrentLevel(1);
-        this.uiManager?.showLevelOnly();
+    public async onMainMenuToLevelClick(): Promise<void> {
+        if (this.isLoadingSave) {
+            console.log('正在加载存档，请稍候...');
+            return;
+        }
+
+        this.isLoadingSave = true;
+        try {
+            // 从存档读取当前关卡
+            const savedLevel = await this.saveManager?.loadCurrentLevel() || 1;
+            console.log(`从存档读取到关卡: ${savedLevel}`);
+            
+            // 设置当前关卡
+            this.setCurrentLevel(savedLevel);
+            this.uiManager?.showLevelOnly();
+        } catch (error) {
+            console.error('读取存档失败，使用默认关卡:', error);
+            this.setCurrentLevel(1);
+            this.uiManager?.showLevelOnly();
+        } finally {
+            this.isLoadingSave = false;
+        }
     }
 
     // 主菜单打开设置界面，不关闭主菜单
@@ -117,17 +154,25 @@ export class GameManager extends Component {
     }
 
     // 通关界面按钮回调函数
-    public onLevelClearToLevelClick(): void {
-        // 进入下一关
-        const nextLevel = this.currentLevel + 1;
-        if (nextLevel <= this.mapManager?.getTotalLevels()) {
-            this.setCurrentLevel(nextLevel);
-        } else {
-            // this.currentLevel = nextLevel;
-            // this.uiManager?.updateLevelLabel(nextLevel, this.mapManager?.getTotalLevels() || 0);
-            // 没有下一关时，展示全通关界面
+    public async onLevelClearToLevelClick(): Promise<void> {
+        // 获取下一关（支持10关循环）
+        const nextLevel = this.saveManager?.getNextLevel(this.currentLevel) || 1;
+        
+        // 检查是否完成了所有10关
+        const isAllCompleted = this.saveManager?.isAllLevelsCompleted(this.currentLevel) || false;
+        
+        if (isAllCompleted) {
+            console.log('恭喜！已完成所有10关，重新开始第一关');
+            // 显示全通关界面
             this.uiManager?.showLevelAllClearOnly();
         }
+        
+        // 设置下一关卡
+        this.setCurrentLevel(nextLevel);
+        
+        // 保存进度
+        await this.saveCurrentProgress();
+        
         this.uiManager?.showLevelOnly();
     }
 
@@ -160,13 +205,52 @@ export class GameManager extends Component {
     }
 
     // 关卡完成时调用
-    public onLevelClear(): void {
-        const nextLevel = this.currentLevel + 1;
-        if (nextLevel <= this.mapManager?.getTotalLevels()) {
-            this.uiManager?.showLevelClearOnly();
-        } else {
-            // 没有下一关时，展示全通关界面
+    public async onLevelClear(): Promise<void> {
+        // 保存当前进度
+        await this.saveCurrentProgress();
+        
+        // 检查是否完成了所有10关
+        const isAllCompleted = this.saveManager?.isAllLevelsCompleted(this.currentLevel) || false;
+        
+        if (isAllCompleted) {
+            console.log('恭喜！已完成所有10关');
+            // 显示全通关界面
             this.uiManager?.showLevelAllClearOnly();
+        } else {
+            // 显示通关界面
+            this.uiManager?.showLevelClearOnly();
+        }
+    }
+
+    // 保存当前进度
+    private async saveCurrentProgress(): Promise<void> {
+        if (!this.saveManager) {
+            console.warn('SaveManager未初始化，无法保存进度');
+            return;
+        }
+
+        try {
+            const success = await this.saveManager.saveCurrentLevel(this.currentLevel);
+            if (success) {
+                console.log(`进度已保存: 关卡 ${this.currentLevel}`);
+            } else {
+                console.warn('进度保存失败');
+            }
+        } catch (error) {
+            console.error('保存进度时发生错误:', error);
+        }
+    }
+
+    // 获取当前关卡
+    public getCurrentLevel(): number {
+        return this.currentLevel;
+    }
+
+    // 清除存档数据（调试用）
+    public async clearSaveData(): Promise<void> {
+        if (this.saveManager) {
+            await this.saveManager.clearSaveData();
+            console.log('存档数据已清除');
         }
     }
 
