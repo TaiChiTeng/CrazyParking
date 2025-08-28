@@ -14,6 +14,8 @@ export class SaveManager extends Component {
     private readonly SAVE_KEY = 'crazy_parking_save';  // 云存储键名
     private readonly SAVE_VERSION = '1.0.0';           // 存档版本
     private readonly MAX_LEVEL = 10;                   // 最大关卡数
+    private isCloudAvailable: boolean = false;         // 云存储是否可用
+    private cloudCheckTimeout: number = 3000;          // 云存储检查超时时间(毫秒)
     
     // 单例模式
     public static getInstance(): SaveManager {
@@ -25,6 +27,54 @@ export class SaveManager extends Component {
 
     onLoad() {
         SaveManager.instance = this;
+    }
+
+    /**
+     * 初始化SaveManager，检查云存储可用性
+     */
+    public async init(): Promise<void> {
+        console.log('初始化SaveManager...');
+        this.isCloudAvailable = await this.checkCloudAvailability();
+        console.log(`云存储可用性: ${this.isCloudAvailable ? '可用' : '不可用，将使用本地存储'}`);
+    }
+
+    /**
+     * 检查云存储是否可用
+     */
+    private async checkCloudAvailability(): Promise<boolean> {
+        try {
+            // 检查微信环境
+            if (typeof wx === 'undefined' || !wx.cloud) {
+                console.log('非微信小游戏环境，使用本地存储');
+                return false;
+            }
+
+            // 尝试调用云函数检查可用性
+            return new Promise<boolean>((resolve) => {
+                const timer = setTimeout(() => {
+                    console.log('云存储检查超时，使用本地存储');
+                    resolve(false);
+                }, this.cloudCheckTimeout);
+
+                wx.cloud.callFunction({
+                    name: 'loadGameData',
+                    data: { key: 'test_connection' },
+                    success: () => {
+                        clearTimeout(timer);
+                        console.log('云存储连接正常');
+                        resolve(true);
+                    },
+                    fail: (err) => {
+                        clearTimeout(timer);
+                        console.log('云存储连接失败:', err.errMsg || err);
+                        resolve(false);
+                    }
+                });
+            });
+        } catch (error) {
+            console.error('检查云存储可用性时出错:', error);
+            return false;
+        }
     }
 
     /**
@@ -44,17 +94,28 @@ export class SaveManager extends Component {
 
             console.log(`准备保存关卡数据: ${validLevel}`);
 
-            // 检查是否在微信小游戏环境
-            if (typeof wx !== 'undefined' && wx.cloud) {
-                // 使用微信云存储
+            // 优先使用云存储（如果可用）
+            if (this.isCloudAvailable) {
+                console.log('使用云存储保存数据');
                 return await this.saveToWxCloud(saveData);
             } else {
-                // 降级到本地存储
+                console.log('使用本地存储保存数据');
                 return this.saveToLocal(saveData);
             }
         } catch (error) {
             console.error('保存关卡失败:', error);
-            return false;
+            // 容错：尝试本地存储
+            try {
+                const saveData: SaveData = {
+                    currentLevel: this.validateLevel(level),
+                    timestamp: Date.now(),
+                    version: this.SAVE_VERSION
+                };
+                return this.saveToLocal(saveData);
+            } catch (localError) {
+                console.error('本地存储也失败:', localError);
+                return false;
+            }
         }
     }
 
@@ -66,17 +127,23 @@ export class SaveManager extends Component {
         try {
             console.log('开始读取存档数据...');
 
-            // 检查是否在微信小游戏环境
-            if (typeof wx !== 'undefined' && wx.cloud) {
-                // 使用微信云存储
+            // 优先使用云存储（如果可用）
+            if (this.isCloudAvailable) {
+                console.log('尝试从云存储读取数据');
                 return await this.loadFromWxCloud();
             } else {
-                // 降级到本地存储
+                console.log('从本地存储读取数据');
                 return this.loadFromLocal();
             }
         } catch (error) {
             console.error('读取存档失败:', error);
-            return 1; // 默认返回第一关
+            // 容错：尝试本地存储
+            try {
+                return this.loadFromLocal();
+            } catch (localError) {
+                console.error('本地存储读取也失败:', localError);
+                return 1; // 默认返回第一关
+            }
         }
     }
 
@@ -85,25 +152,44 @@ export class SaveManager extends Component {
      */
     private async saveToWxCloud(saveData: SaveData): Promise<boolean> {
         return new Promise((resolve) => {
-            wx.cloud.callFunction({
-                name: 'saveGameData',
-                data: {
-                    key: this.SAVE_KEY,
-                    data: saveData
-                },
-                success: (res) => {
-                    console.log('云存储保存成功:', res);
-                    // 同时保存到本地作为备份
-                    this.saveToLocal(saveData);
-                    resolve(true);
-                },
-                fail: (err) => {
-                    console.error('云存储保存失败:', err);
-                    // 降级到本地存储
-                    const localResult = this.saveToLocal(saveData);
-                    resolve(localResult);
-                }
-            });
+            // 设置超时机制
+            const timer = setTimeout(() => {
+                console.log('云存储保存超时，降级到本地存储');
+                this.isCloudAvailable = false; // 标记云存储不可用
+                const localResult = this.saveToLocal(saveData);
+                resolve(localResult);
+            }, this.cloudCheckTimeout);
+
+            try {
+                wx.cloud.callFunction({
+                    name: 'saveGameData',
+                    data: {
+                        key: this.SAVE_KEY,
+                        data: saveData
+                    },
+                    success: (res) => {
+                        clearTimeout(timer);
+                        console.log('云存储保存成功:', res);
+                        // 同时保存到本地作为备份
+                        this.saveToLocal(saveData);
+                        resolve(true);
+                    },
+                    fail: (err) => {
+                        clearTimeout(timer);
+                        console.error('云存储保存失败:', err);
+                        // 标记云存储不可用并降级到本地存储
+                        this.isCloudAvailable = false;
+                        const localResult = this.saveToLocal(saveData);
+                        resolve(localResult);
+                    }
+                });
+            } catch (error) {
+                clearTimeout(timer);
+                console.error('调用云函数时出错:', error);
+                this.isCloudAvailable = false;
+                const localResult = this.saveToLocal(saveData);
+                resolve(localResult);
+            }
         });
     }
 
@@ -112,33 +198,55 @@ export class SaveManager extends Component {
      */
     private async loadFromWxCloud(): Promise<number> {
         return new Promise((resolve) => {
-            wx.cloud.callFunction({
-                name: 'loadGameData',
-                data: {
-                    key: this.SAVE_KEY
-                },
-                success: (res) => {
-                    console.log('云存储读取成功:', res);
-                    if (res.result && res.result.data) {
-                        const saveData = res.result.data as SaveData;
-                        if (this.validateSaveData(saveData)) {
-                            const level = this.validateLevel(saveData.currentLevel);
-                            console.log(`从云存储读取到关卡: ${level}`);
-                            resolve(level);
-                            return;
+            // 设置超时机制
+            const timer = setTimeout(() => {
+                console.log('云存储读取超时，降级到本地存储');
+                this.isCloudAvailable = false; // 标记云存储不可用
+                const localLevel = this.loadFromLocal();
+                resolve(localLevel);
+            }, this.cloudCheckTimeout);
+
+            try {
+                wx.cloud.callFunction({
+                    name: 'loadGameData',
+                    data: {
+                        key: this.SAVE_KEY
+                    },
+                    success: (res) => {
+                        clearTimeout(timer);
+                        console.log('云存储读取成功:', res);
+                        if (res.result && res.result.data) {
+                            const saveData = res.result.data as SaveData;
+                            if (this.validateSaveData(saveData)) {
+                                const level = this.validateLevel(saveData.currentLevel);
+                                console.log(`从云存储读取到关卡: ${level}`);
+                                // 同步到本地存储作为备份
+                                this.saveToLocal(saveData);
+                                resolve(level);
+                                return;
+                            }
                         }
+                        // 云存储没有数据，尝试本地存储
+                        console.log('云存储无有效数据，尝试本地存储');
+                        const localLevel = this.loadFromLocal();
+                        resolve(localLevel);
+                    },
+                    fail: (err) => {
+                        clearTimeout(timer);
+                        console.error('云存储读取失败:', err);
+                        // 标记云存储不可用并降级到本地存储
+                        this.isCloudAvailable = false;
+                        const localLevel = this.loadFromLocal();
+                        resolve(localLevel);
                     }
-                    // 云存储没有数据，尝试本地存储
-                    const localLevel = this.loadFromLocal();
-                    resolve(localLevel);
-                },
-                fail: (err) => {
-                    console.error('云存储读取失败:', err);
-                    // 降级到本地存储
-                    const localLevel = this.loadFromLocal();
-                    resolve(localLevel);
-                }
-            });
+                });
+            } catch (error) {
+                clearTimeout(timer);
+                console.error('调用云函数时出错:', error);
+                this.isCloudAvailable = false;
+                const localLevel = this.loadFromLocal();
+                resolve(localLevel);
+            }
         });
     }
 
@@ -225,33 +333,68 @@ export class SaveManager extends Component {
      */
     public async clearSaveData(): Promise<boolean> {
         try {
-            // 清除云存储
-            if (typeof wx !== 'undefined' && wx.cloud) {
-                wx.cloud.callFunction({
-                    name: 'clearGameData',
-                    data: {
-                        key: this.SAVE_KEY
-                    },
-                    success: (res) => {
-                        console.log('云存储清除成功:', res);
-                    },
-                    fail: (err) => {
-                        console.error('云存储清除失败:', err);
+            // 清除本地存储
+            const localCleared = this.clearLocalData();
+            
+            // 如果云存储可用，也清除云存储
+            if (this.isCloudAvailable && typeof wx !== 'undefined' && wx.cloud) {
+                return new Promise((resolve) => {
+                    // 设置超时机制
+                    const timer = setTimeout(() => {
+                        console.log('云存储清除超时，但本地已清除');
+                        resolve(localCleared);
+                    }, this.cloudCheckTimeout);
+
+                    try {
+                        wx.cloud.callFunction({
+                            name: 'clearGameData',
+                            data: {
+                                key: this.SAVE_KEY
+                            },
+                            success: (res) => {
+                                clearTimeout(timer);
+                                console.log('云存储清除成功:', res);
+                                resolve(true);
+                            },
+                            fail: (err) => {
+                                clearTimeout(timer);
+                                console.error('云存储清除失败:', err);
+                                // 即使云存储清除失败，本地已清除，仍返回成功
+                                resolve(localCleared);
+                            }
+                        });
+                    } catch (error) {
+                        clearTimeout(timer);
+                        console.error('调用清除云函数时出错:', error);
+                        resolve(localCleared);
                     }
                 });
             }
+            
+            return localCleared;
+        } catch (error) {
+            console.error('清除存档数据时出错:', error);
+            return false;
+        }
+    }
 
-            // 清除本地存储
+    /**
+     * 清除本地存储数据
+     */
+    private clearLocalData(): boolean {
+        try {
             if (typeof wx !== 'undefined' && wx.removeStorageSync) {
                 wx.removeStorageSync(this.SAVE_KEY);
             } else if (typeof localStorage !== 'undefined') {
                 localStorage.removeItem(this.SAVE_KEY);
+            } else {
+                console.warn('本地存储不可用');
+                return false;
             }
-
-            console.log('存档数据已清除');
+            console.log('本地存档数据已清除');
             return true;
         } catch (error) {
-            console.error('清除存档失败:', error);
+            console.error('清除本地存档失败:', error);
             return false;
         }
     }

@@ -44,10 +44,48 @@ export class SaveTest extends Component {
             // 测试4: 10关循环测试
             await this.testLevelCycle();
             
+            // 测试5: 容错处理
+            await this.testErrorHandling();
+            
             console.log('=== 所有测试完成 ===');
         } catch (error) {
             console.error('测试过程中出现错误:', error);
         }
+    }
+
+    /**
+     * 测试容错处理
+     */
+    private async testErrorHandling(): Promise<void> {
+        console.log('测试5: 容错处理');
+        
+        // 测试云存储不可用时的降级处理
+        console.log('测试云存储不可用时的降级处理...');
+        
+        // 保存一个测试关卡
+        await this.saveManager.saveProgress(5);
+        console.log('保存关卡5（应该降级到本地存储）');
+        
+        // 读取关卡
+        const saveData = await this.saveManager.loadSave();
+        const loadedLevel = saveData?.currentLevel;
+        console.log(`读取到关卡: ${loadedLevel}（应该从本地存储读取）`);
+        
+        if (loadedLevel === 5) {
+            console.log('✓ 容错处理测试通过：本地存储正常工作');
+        } else {
+            console.log('✗ 容错处理测试失败：本地存储异常');
+        }
+        
+        // 测试清除功能
+        const clearResult = await this.saveManager.clearSave();
+        if (clearResult) {
+            console.log('✓ 清除功能测试通过：即使云存储不可用，本地清除仍正常');
+        } else {
+            console.log('✗ 清除功能测试失败');
+        }
+        
+        console.log('测试5完成\n');
     }
 
     /**

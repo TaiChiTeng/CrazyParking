@@ -34,10 +34,31 @@ export class GameManager extends Component {
         this.initManagers();
 
         // 初始化存档管理器
-        this.initSaveManager();
+        await this.initSaveManager();
 
         // 初始化时只显示主菜单
         this.uiManager?.showMainMenuOnly();
+        
+        // 从存档中恢复当前关卡
+        await this.loadCurrentLevel();
+    }
+
+    // 从存档中恢复当前关卡
+    private async loadCurrentLevel(): Promise<void> {
+        if (!this.saveManager) {
+            console.warn('SaveManager未初始化，使用默认关卡');
+            this.setCurrentLevel(1);
+            return;
+        }
+
+        try {
+            const savedLevel = await this.saveManager.loadCurrentLevel();
+            console.log(`从存档读取到关卡: ${savedLevel}`);
+            this.setCurrentLevel(savedLevel);
+        } catch (error) {
+            console.error('读取存档失败，使用默认关卡:', error);
+            this.setCurrentLevel(1);
+        }
     }
 
     // 初始化各管理器引用
@@ -79,12 +100,13 @@ export class GameManager extends Component {
     }
 
     // 初始化存档管理器
-    private initSaveManager() {
+    private async initSaveManager() {
         this.saveManager = SaveManager.getInstance();
         if (!this.saveManager) {
             console.error('SaveManager初始化失败');
         } else {
-            console.log('SaveManager初始化成功');
+            // SaveManager已在Loading阶段初始化，这里只需获取实例
+            console.log('GameManager: SaveManager实例获取成功');
         }
     }
 
@@ -170,8 +192,8 @@ export class GameManager extends Component {
         // 设置下一关卡
         this.setCurrentLevel(nextLevel);
         
-        // 保存进度
-        await this.saveCurrentProgress();
+        // 保存下一关的进度（已经在onLevelClear中保存过了，这里不需要重复保存）
+        // await this.saveProgressForLevel(nextLevel);
         
         this.uiManager?.showLevelOnly();
     }
@@ -206,17 +228,19 @@ export class GameManager extends Component {
 
     // 关卡完成时调用
     public async onLevelClear(): Promise<void> {
-        // 保存当前进度
-        await this.saveCurrentProgress();
-        
         // 检查是否完成了所有10关
         const isAllCompleted = this.saveManager?.isAllLevelsCompleted(this.currentLevel) || false;
         
         if (isAllCompleted) {
-            console.log('恭喜！已完成所有10关');
+            console.log('恭喜！已完成所有10关，重置为第一关');
+            // 通关第10关时，保存第1关作为下次开始的关卡
+            await this.saveProgressForLevel(1);
             // 显示全通关界面
             this.uiManager?.showLevelAllClearOnly();
         } else {
+            // 普通通关，保存下一关
+            const nextLevel = this.saveManager?.getNextLevel(this.currentLevel) || 1;
+            await this.saveProgressForLevel(nextLevel);
             // 显示通关界面
             this.uiManager?.showLevelClearOnly();
         }
@@ -224,15 +248,20 @@ export class GameManager extends Component {
 
     // 保存当前进度
     private async saveCurrentProgress(): Promise<void> {
+        await this.saveProgressForLevel(this.currentLevel);
+    }
+
+    // 保存指定关卡的进度
+    private async saveProgressForLevel(level: number): Promise<void> {
         if (!this.saveManager) {
             console.warn('SaveManager未初始化，无法保存进度');
             return;
         }
 
         try {
-            const success = await this.saveManager.saveCurrentLevel(this.currentLevel);
+            const success = await this.saveManager.saveCurrentLevel(level);
             if (success) {
-                console.log(`进度已保存: 关卡 ${this.currentLevel}`);
+                console.log(`进度已保存: 关卡 ${level}`);
             } else {
                 console.warn('进度保存失败');
             }
