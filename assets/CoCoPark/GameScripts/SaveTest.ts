@@ -63,12 +63,11 @@ export class SaveTest extends Component {
         console.log('测试云存储不可用时的降级处理...');
         
         // 保存一个测试关卡
-        await this.saveManager.saveProgress(5);
+        await this.saveManager.saveCurrentLevel(5);
         console.log('保存关卡5（应该降级到本地存储）');
         
         // 读取关卡
-        const saveData = await this.saveManager.loadSave();
-        const loadedLevel = saveData?.currentLevel;
+        const loadedLevel = await this.saveManager.loadCurrentLevel();
         console.log(`读取到关卡: ${loadedLevel}（应该从本地存储读取）`);
         
         if (loadedLevel === 5) {
@@ -78,7 +77,7 @@ export class SaveTest extends Component {
         }
         
         // 测试清除功能
-        const clearResult = await this.saveManager.clearSave();
+        const clearResult = await this.saveManager.clearSaveData();
         if (clearResult) {
             console.log('✓ 清除功能测试通过：即使云存储不可用，本地清除仍正常');
         } else {
@@ -94,12 +93,12 @@ export class SaveTest extends Component {
     private async testClearSave(): Promise<void> {
         console.log('测试1: 清除存档');
         
-        const result = await this.saveManager.clearSave();
+        const result = await this.saveManager.clearSaveData();
         console.log('清除存档结果:', result ? '成功' : '失败');
         
-        // 验证清除后读取存档应该返回null
-        const saveData = await this.saveManager.loadSave();
-        console.log('清除后读取存档:', saveData);
+        // 验证清除后读取存档应该返回1（默认第一关）
+        const loadedLevel = await this.saveManager.loadCurrentLevel();
+        console.log('清除后读取存档:', loadedLevel);
         console.log('测试1完成\n');
     }
 
@@ -110,12 +109,12 @@ export class SaveTest extends Component {
         console.log('测试2: 保存关卡进度');
         
         // 保存第3关
-        const saveResult = await this.saveManager.saveProgress(3);
+        const saveResult = await this.saveManager.saveCurrentLevel(3);
         console.log('保存第3关结果:', saveResult ? '成功' : '失败');
         
         // 立即读取验证
-        const saveData = await this.saveManager.loadSave();
-        console.log('保存后读取存档:', saveData);
+        const loadedLevel = await this.saveManager.loadCurrentLevel();
+        console.log('保存后读取存档: 关卡', loadedLevel);
         console.log('测试2完成\n');
     }
 
@@ -125,15 +124,9 @@ export class SaveTest extends Component {
     private async testLoadSave(): Promise<void> {
         console.log('测试3: 读取存档');
         
-        const saveData = await this.saveManager.loadSave();
-        if (saveData) {
-            console.log('读取到存档数据:');
-            console.log('- 当前关卡:', saveData.currentLevel);
-            console.log('- 保存时间:', new Date(saveData.timestamp).toLocaleString());
-            console.log('- 版本:', saveData.version);
-        } else {
-            console.log('未找到存档数据');
-        }
+        const loadedLevel = await this.saveManager.loadCurrentLevel();
+        console.log('读取到存档数据:');
+        console.log('- 当前关卡:', loadedLevel);
         console.log('测试3完成\n');
     }
 
@@ -153,14 +146,14 @@ export class SaveTest extends Component {
         
         // 测试保存第10关后的循环
         console.log('\n测试第10关通关后的循环:');
-        await this.saveManager.saveProgress(10);
-        let saveData = await this.saveManager.loadSave();
-        console.log('保存第10关后的存档:', saveData?.currentLevel);
+        await this.saveManager.saveCurrentLevel(10);
+        let loadedLevel = await this.saveManager.loadCurrentLevel();
+        console.log('保存第10关后的存档:', loadedLevel);
         
         // 模拟通关第10关，应该循环到第1关
-        await this.saveManager.saveProgress(11); // 这应该被验证为第1关
-        saveData = await this.saveManager.loadSave();
-        console.log('通关第10关后的存档:', saveData?.currentLevel);
+        await this.saveManager.saveCurrentLevel(11); // 这应该被验证为第1关
+        loadedLevel = await this.saveManager.loadCurrentLevel();
+        console.log('通关第10关后的存档:', loadedLevel);
         
         console.log('测试4完成\n');
     }
