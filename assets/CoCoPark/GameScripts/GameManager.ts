@@ -3,7 +3,7 @@ import { UIManager } from './UIManager';
 import { CarManager } from './CarManager';
 import { MapManager } from './MapManager';
 import { CarAudio } from './CarAudio';
-import { SaveManager } from './SaveManager';
+import { SaveManager, GameData } from './SaveManager';
 
 const { ccclass, property } = _decorator;
 
@@ -259,9 +259,11 @@ export class GameManager extends Component {
         }
 
         try {
-            const success = await this.saveManager.saveCurrentLevel(level);
+            // 先读取当前游戏数据以保持音频状态不变
+            const gameData = await this.saveManager.loadGameData();
+            const success = await this.saveManager.saveCurrentLevel(level, gameData.isAudioOn);
             if (success) {
-                console.log(`进度已保存: 关卡 ${level}`);
+                console.log(`进度已保存: 关卡 ${level}, 音频状态: ${gameData.isAudioOn ? '开启' : '关闭'}`);
             } else {
                 console.warn('进度保存失败');
             }

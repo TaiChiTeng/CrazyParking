@@ -6,6 +6,13 @@ interface SaveData {
     currentLevel: number;  // 当前关卡
     timestamp: number;     // 存档时间戳
     version: string;       // 存档版本
+    isAudioOn: boolean;    // 音频开关状态
+}
+
+// 游戏数据接口
+export interface GameData {
+    currentLevel: number;  // 当前关卡
+    isAudioOn: boolean;    // 音频开关状态
 }
 
 @ccclass('SaveManager')
@@ -78,10 +85,11 @@ export class SaveManager extends Component {
     }
 
     /**
-     * 保存当前关卡到云存储
+     * 保存当前关卡和音频状态到云存储
      * @param level 当前关卡
+     * @param isAudioOn 音频开关状态
      */
-    public async saveCurrentLevel(level: number): Promise<boolean> {
+    public async saveCurrentLevel(level: number, isAudioOn: boolean = true): Promise<boolean> {
         try {
             // 确保关卡在有效范围内
             const validLevel = this.validateLevel(level);
@@ -89,7 +97,8 @@ export class SaveManager extends Component {
             const saveData: SaveData = {
                 currentLevel: validLevel,
                 timestamp: Date.now(),
-                version: this.SAVE_VERSION
+                version: this.SAVE_VERSION,
+                isAudioOn: isAudioOn
             };
 
             console.log(`准备保存关卡数据: ${validLevel}`);
@@ -109,7 +118,8 @@ export class SaveManager extends Component {
                 const saveData: SaveData = {
                     currentLevel: this.validateLevel(level),
                     timestamp: Date.now(),
-                    version: this.SAVE_VERSION
+                    version: this.SAVE_VERSION,
+                    isAudioOn: isAudioOn
                 };
                 return this.saveToLocal(saveData);
             } catch (localError) {
@@ -120,31 +130,40 @@ export class SaveManager extends Component {
     }
 
     /**
-     * 从云存储读取当前关卡
-     * @returns 当前关卡，如果没有存档则返回1
+     * 从云存储读取游戏数据
+     * @returns 游戏数据，如果没有存档则返回默认值
      */
-    public async loadCurrentLevel(): Promise<number> {
+    public async loadGameData(): Promise<GameData> {
         try {
             console.log('开始读取存档数据...');
 
             // 优先使用云存储（如果可用）
             if (this.isCloudAvailable) {
                 console.log('尝试从云存储读取数据');
-                return await this.loadFromWxCloud();
+                return await this.loadFromWxCloudFull();
             } else {
                 console.log('从本地存储读取数据');
-                return this.loadFromLocal();
+                return this.loadFromLocalFull();
             }
         } catch (error) {
             console.error('读取存档失败:', error);
             // 容错：尝试本地存储
             try {
-                return this.loadFromLocal();
+                return this.loadFromLocalFull();
             } catch (localError) {
                 console.error('本地存储读取也失败:', localError);
-                return 1; // 默认返回第一关
+                return { currentLevel: 1, isAudioOn: true }; // 默认值
             }
         }
+    }
+
+    /**
+     * 从云存储读取当前关卡（保持向后兼容）
+     * @returns 当前关卡，如果没有存档则返回1
+     */
+    public async loadCurrentLevel(): Promise<number> {
+        const gameData = await this.loadGameData();
+        return gameData.currentLevel;
     }
 
     /**
@@ -251,6 +270,66 @@ export class SaveManager extends Component {
     }
 
     /**
+     * 从微信云存储读取完整游戏数据
+     */
+    private async loadFromWxCloudFull(): Promise<GameData> {
+        return new Promise((resolve) => {
+            // 设置超时机制
+            const timer = setTimeout(() => {
+                console.log('云存储读取超时，降级到本地存储');
+                this.isCloudAvailable = false; // 标记云存储不可用
+                const localData = this.loadFromLocalFull();
+                resolve(localData);
+            }, this.cloudCheckTimeout);
+
+            try {
+                wx.cloud.callFunction({
+                    name: 'loadGameData',
+                    data: {
+                        key: this.SAVE_KEY
+                    },
+                    success: (res) => {
+                        clearTimeout(timer);
+                        console.log('云存储读取成功:', res);
+                        if (res.result && res.result.data) {
+                            const saveData = res.result.data as SaveData;
+                            if (this.validateSaveData(saveData)) {
+                                const gameData: GameData = {
+                                    currentLevel: this.validateLevel(saveData.currentLevel),
+                                    isAudioOn: saveData.isAudioOn
+                                };
+                                console.log(`从云存储读取到游戏数据:`, gameData);
+                                // 同步到本地存储作为备份
+                                this.saveToLocal(saveData);
+                                resolve(gameData);
+                                return;
+                            }
+                        }
+                        // 云存储没有数据，尝试本地存储
+                        console.log('云存储无有效数据，尝试本地存储');
+                        const localData = this.loadFromLocalFull();
+                        resolve(localData);
+                    },
+                    fail: (err) => {
+                        clearTimeout(timer);
+                        console.error('云存储读取失败:', err);
+                        // 标记云存储不可用并降级到本地存储
+                        this.isCloudAvailable = false;
+                        const localData = this.loadFromLocalFull();
+                        resolve(localData);
+                    }
+                });
+            } catch (error) {
+                clearTimeout(timer);
+                console.error('调用云函数时出错:', error);
+                this.isCloudAvailable = false;
+                const localData = this.loadFromLocalFull();
+                resolve(localData);
+            }
+        });
+    }
+
+    /**
      * 保存到本地存储
      */
     private saveToLocal(saveData: SaveData): boolean {
@@ -302,13 +381,46 @@ export class SaveManager extends Component {
     }
 
     /**
+     * 从本地存储读取完整游戏数据
+     */
+    private loadFromLocalFull(): GameData {
+        try {
+            let dataStr: string = '';
+            
+            if (typeof wx !== 'undefined' && wx.getStorageSync) {
+                dataStr = wx.getStorageSync(this.SAVE_KEY) || '';
+            } else if (typeof localStorage !== 'undefined') {
+                dataStr = localStorage.getItem(this.SAVE_KEY) || '';
+            }
+
+            if (dataStr) {
+                const saveData = JSON.parse(dataStr) as SaveData;
+                if (this.validateSaveData(saveData)) {
+                    const gameData: GameData = {
+                        currentLevel: this.validateLevel(saveData.currentLevel),
+                        isAudioOn: saveData.isAudioOn !== undefined ? saveData.isAudioOn : true // 兼容旧存档
+                    };
+                    console.log(`从本地存储读取到游戏数据:`, gameData);
+                    return gameData;
+                }
+            }
+        } catch (error) {
+            console.error('本地存储读取失败:', error);
+        }
+        
+        console.log('没有找到有效存档，返回默认值');
+        return { currentLevel: 1, isAudioOn: true };
+    }
+
+    /**
      * 验证存档数据
      */
     private validateSaveData(saveData: any): saveData is SaveData {
         return saveData &&
                typeof saveData.currentLevel === 'number' &&
                typeof saveData.timestamp === 'number' &&
-               typeof saveData.version === 'string';
+               typeof saveData.version === 'string' &&
+               (saveData.isAudioOn === undefined || typeof saveData.isAudioOn === 'boolean'); // 兼容旧存档
     }
 
     /**
@@ -326,6 +438,22 @@ export class SaveManager extends Component {
         }
         
         return level;
+    }
+
+    /**
+     * 保存音频状态
+     * @param isAudioOn 音频开关状态
+     */
+    public async saveAudioState(isAudioOn: boolean): Promise<boolean> {
+        try {
+            // 先读取当前存档数据
+            const gameData = await this.loadGameData();
+            // 保存时保持当前关卡不变，只更新音频状态
+            return await this.saveCurrentLevel(gameData.currentLevel, isAudioOn);
+        } catch (error) {
+            console.error('保存音频状态失败:', error);
+            return false;
+        }
     }
 
     /**

@@ -1,6 +1,7 @@
 import { _decorator, AudioClip, AudioSource, Component, Button, Sprite, sys } from 'cc';
 
 import { AudioMgr } from './AudioMgr';
+import { SaveManager } from './SaveManager';
 const { ccclass, property } = _decorator;
 
 @ccclass("CarSound")
@@ -28,9 +29,7 @@ export class CarAudio extends Component {
     @property(Button)
     public btnAudio: Button = null;
 
-    STORE_VERSION = 0;
-    AUDIO_STORE_KEY = "audio"
-    audioConfig = {version:0, isAudioOn: true}
+    audioConfig = {isAudioOn: true}
 
     currMusic: CarMusic = null;
     currSound: CarSound = null;
@@ -112,33 +111,27 @@ export class CarAudio extends Component {
         console.log("[CarAudio] 音效播放调用完成");
     }
 
-    loadConfig() {
+    async loadConfig() {
         console.log("[CarAudio] loadConfig 开始加载音频配置");
-        let saveConfig = sys.localStorage.getItem(this.AUDIO_STORE_KEY);
-        console.log("[CarAudio] 本地存储的配置:", saveConfig);
-        if (saveConfig) {
-            try {
-                let loadedConfig = JSON.parse(saveConfig);
-                console.log("[CarAudio] 解析后的配置:", loadedConfig);
-                if (loadedConfig.version == this.STORE_VERSION) {
-                    this.audioConfig = loadedConfig;
-                    console.log("[CarAudio] 使用本地配置");
-                } else {
-                    console.log("[CarAudio] 版本不匹配，使用默认配置");
-                }
-            }
-            catch(e) {
-                console.log("[CarAudio] 音频配置解析失败，使用默认值", e);
-            }
-        } else {
-            console.log("[CarAudio] 没有本地配置，使用默认配置");
+        try {
+            const saveManager = SaveManager.getInstance();
+            const gameData = await saveManager.loadGameData();
+            this.audioConfig.isAudioOn = gameData.isAudioOn;
+            console.log("[CarAudio] 从SaveManager读取到音频配置:", this.audioConfig);
+        } catch (error) {
+            console.error("[CarAudio] 加载音频配置失败，使用默认值:", error);
+            this.audioConfig.isAudioOn = true;
         }
-        console.log("[CarAudio] 最终音频配置:", this.audioConfig);
     }
 
-    saveConfig() {
-        let saveConfig = JSON.stringify(this.audioConfig);
-        sys.localStorage.setItem(this.AUDIO_STORE_KEY, saveConfig);
+    async saveConfig() {
+        try {
+            const saveManager = SaveManager.getInstance();
+            await saveManager.saveAudioState(this.audioConfig.isAudioOn);
+            console.log("[CarAudio] 音频配置已保存到SaveManager");
+        } catch (error) {
+            console.error("[CarAudio] 保存音频配置失败:", error);
+        }
     }
 
     onClickAudio() {
@@ -162,13 +155,28 @@ export class CarAudio extends Component {
 
         this.updateAudioButtonState();
 
-        this.saveConfig();
+        // 异步保存配置
+        this.saveConfig().catch(error => {
+            console.error("[CarAudio] 保存音频配置时出错:", error);
+        });
         
-        // 立即应用音频开关状态到当前播放的背景音乐
+        // 处理音频开关状态变化
         if (this.musicAudioSource) {
-            let newVolume = this.audioConfig.isAudioOn ? 1.0 : 0.0;
-            console.log("[CarAudio] 设置背景音乐音量:", newVolume);
-            this.musicAudioSource.volume = newVolume;
+            if (this.audioConfig.isAudioOn) {
+                // 声音开启时，检查背景音乐是否正在播放
+                if (!this.musicAudioSource.playing) {
+                    console.log("[CarAudio] 声音开启且背景音乐未播放，开始播放背景音乐");
+                    this.loopMusic();
+                } else {
+                    // 如果已经在播放，只需要恢复音量
+                    this.musicAudioSource.volume = 0.4;
+                    console.log("[CarAudio] 声音开启，恢复背景音乐音量:", this.musicAudioSource.volume);
+                }
+            } else {
+                // 声音关闭时，将音量设为0但不停止播放
+                this.musicAudioSource.volume = 0.0;
+                console.log("[CarAudio] 声音关闭，设置背景音乐音量为0");
+            }
         } else {
             console.log("[CarAudio] 警告：musicAudioSource为空");
         }
@@ -192,7 +200,7 @@ export class CarAudio extends Component {
         }
     }
 
-    start() {
+    async start() {
         console.log("[CarAudio] start 开始初始化音频管理器");
         console.log("[CarAudio] bgMusics数组:", this.bgMusics);
         console.log("[CarAudio] carSounds数组:", this.carSounds);
@@ -200,8 +208,14 @@ export class CarAudio extends Component {
         this.musicAudioSource = this.node.addComponent(AudioSource);
         console.log("[CarAudio] 创建AudioSource组件:", this.musicAudioSource);
         
-        this.loadConfig();
+        // 异步加载配置
+        await this.loadConfig();
         console.log("[CarAudio] 配置加载完成，检查音频开关状态，确认是否开始播放背景音乐");
+        
+        // 更新按钮状态
+        this.updateAudioButtonState();
+        
+        // 根据音频开关状态决定是否播放背景音乐
         if(this.audioConfig.isAudioOn){
             this.loopMusic();
         }

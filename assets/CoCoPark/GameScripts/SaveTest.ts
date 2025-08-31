@@ -1,5 +1,5 @@
 import { _decorator, Component } from 'cc';
-import { SaveManager } from './SaveManager';
+import { SaveManager, GameData } from './SaveManager';
 import { GameManager } from './GameManager';
 
 const { ccclass, property } = _decorator;
@@ -44,12 +44,55 @@ export class SaveTest extends Component {
             // 测试4: 10关循环测试
             await this.testLevelCycle();
             
-            // 测试5: 容错处理
+            // 测试5: 音频状态保存和读取
+            await this.testAudioState();
+            
+            // 测试6: 容错处理
             await this.testErrorHandling();
             
             console.log('=== 所有测试完成 ===');
         } catch (error) {
             console.error('测试过程中出现错误:', error);
+        }
+    }
+
+    /**
+     * 测试音频状态保存和读取
+     */
+    private async testAudioState(): Promise<void> {
+        console.log('\n--- 测试音频状态保存和读取 ---');
+        
+        try {
+            // 测试保存音频开启状态
+            console.log('测试保存音频开启状态...');
+            const saveResult1 = await this.saveManager.saveCurrentLevel(3, true);
+            console.log(`保存结果: ${saveResult1 ? '成功' : '失败'}`);
+            
+            // 读取并验证
+            const gameData1: GameData = await this.saveManager.loadGameData();
+            console.log(`读取结果: 关卡${gameData1.currentLevel}, 音频${gameData1.isAudioOn ? '开启' : '关闭'}`);
+            
+            // 测试保存音频关闭状态
+            console.log('测试保存音频关闭状态...');
+            const saveResult2 = await this.saveManager.saveCurrentLevel(5, false);
+            console.log(`保存结果: ${saveResult2 ? '成功' : '失败'}`);
+            
+            // 读取并验证
+            const gameData2: GameData = await this.saveManager.loadGameData();
+            console.log(`读取结果: 关卡${gameData2.currentLevel}, 音频${gameData2.isAudioOn ? '开启' : '关闭'}`);
+            
+            // 测试单独保存音频状态
+            console.log('测试单独保存音频状态...');
+            const audioSaveResult = await this.saveManager.saveAudioState(true);
+            console.log(`音频状态保存结果: ${audioSaveResult ? '成功' : '失败'}`);
+            
+            // 验证关卡未变，音频状态已更新
+            const gameData3: GameData = await this.saveManager.loadGameData();
+            console.log(`验证结果: 关卡${gameData3.currentLevel}(应该还是5), 音频${gameData3.isAudioOn ? '开启' : '关闭'}(应该是开启)`);
+            
+            console.log('音频状态测试完成');
+        } catch (error) {
+            console.error('音频状态测试失败:', error);
         }
     }
 
